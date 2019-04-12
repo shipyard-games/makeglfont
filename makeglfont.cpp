@@ -36,6 +36,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <map>
@@ -546,16 +547,26 @@ int main( int argc, char **argv )
     std::vector<uint32_t> v_charcodes;
     
     std::string font_filename;
-    int bitmap_size;
+    uint32_t charcode_start;
+    uint32_t charcode_end;
 
     // *** Process Args
     
-    if(argc!=3) {
-        std::cerr << "Arguments required: '" << argv[0] << " fontname.ttf bitmap_size'" << std::endl;
+    if(argc!=4) {
+        std::cerr << "Arguments required: '" << argv[0] << " fontname.ttf charcode_start charcode_end'" << std::endl;
         exit(0);
     } else {
         font_filename = argv[1];
-        bitmap_size = std::atoi(argv[2]);
+        
+        std::stringstream ss;
+        
+        ss << std::hex << argv[2];
+        ss >> charcode_start;
+        
+        ss.clear();
+        
+        ss << std::hex << argv[3];
+        ss >> charcode_end;
     }
 
     // *** Load Font
@@ -572,17 +583,9 @@ int main( int argc, char **argv )
         
         std::vector<uint32_t> global_charcodes;
         
-        for(uint32_t i=' ';i<='~';i+=1) {
+        for(uint32_t i=charcode_start; i<=charcode_end; i+=1) {
             global_charcodes.push_back(i);
         }
-        
-        global_charcodes.push_back(0x2026); // ellipsis
-        global_charcodes.push_back(0x20AC); // Euro
-        global_charcodes.push_back(0x00A9); // Copyright symbol
-        global_charcodes.push_back(0x201C); // double opening quote
-        global_charcodes.push_back(0x201D); // double closing quote
-        global_charcodes.push_back(0x2018); // single opening quote
-        global_charcodes.push_back(0x2019); // single closing quote
         
         for(int i = 0; i<global_charcodes.size(); i+=1) {
             FT_ULong gcharcode = global_charcodes[i];
@@ -597,48 +600,17 @@ int main( int argc, char **argv )
                 v_charcodes.push_back(gcharcode);
             }
         }
-        
     }
     
     // *** Pack Glyphs
-    
-    fbitmap<unsigned char> final_bitmap(bitmap_size, bitmap_size, (unsigned char)0);
 
-    int font_size = 2;
-    
-    bool packed_successfully = false;
+    int font_size = 72;
     
     std::map<uint32_t, glyph> m_glyphs;
-
-    do {
-        font_size += 2;
-        m_glyphs = load_glyphs(ftw, font_size, 1, v_charcodes);
-        packed_successfully = pack_bin (m_glyphs, final_bitmap, v_charcodes, false);
-
-    } while(packed_successfully);
-
-    if(font_size == 4) {
-        std::cerr << "Font packing failure. Pack failed at " << font_size << " pixels. Stopping." << std::endl;
-        exit(1);
-    } else {
-        font_size-=2;
-        
-        // Okay, we have our good sizes. Now it's time to do the distance mapping...
-        
-        int scale = 16;
-        
-        m_glyphs = load_glyphs(ftw, font_size, scale, v_charcodes);
-        
-        std::cout << "Packing at " << font_size << " pixels." << std::endl;
-        packed_successfully = pack_bin (m_glyphs, final_bitmap, v_charcodes, true);
-    }
     
-    if(!packed_successfully) {
-        std::cerr << "Final font packing failure. Pack failed at " << font_size << " pixels. Stopping." << std::endl;
-        exit(1);
-    }
+    int scale = 16;
     
-    std::cout << "Succesfully packed at " << font_size << " pixels." << std::endl;
+    m_glyphs = load_glyphs(ftw, font_size, scale, v_charcodes);
     
     // DONE LOADING
  
@@ -720,23 +692,6 @@ int main( int argc, char **argv )
             }
         }
     }
-     
-    // WRITE THE FINAL BITMAP
-    
-    // the name
-    std::string bitmap_name(file_to_font_name(font_filename));
-    bitmap_name+=".png";
-       
-    if(stbi_write_png(bitmap_name.c_str(),
-                      final_bitmap.width,
-                      final_bitmap.height,
-                      1,
-                      final_bitmap.data.data(),
-                      final_bitmap.width)) {
-        std::cout << "Wrote " << bitmap_name << "." << std::endl;
-    } else {
-        std::cerr << "Write of " << bitmap_name << " FAILED." << std::endl;
-    }
     
     // OUTPUT JSON DESCRIPTIONS
     
@@ -756,8 +711,6 @@ int main( int argc, char **argv )
         pjo["descender"] = picojson::value(descender);
         pjo["max_advance"] = picojson::value(max_advance);
         pjo["space_advance"] = picojson::value(space_advance);
-        pjo["bitmap_width"] = picojson::value(float(final_bitmap.width));
-        pjo["bitmap_height"] = picojson::value(float(final_bitmap.height));
         
         picojson::object json_glyph_data;
         json_glyph_data.clear();
@@ -819,6 +772,25 @@ int main( int argc, char **argv )
             jsonfile.close();
         }
     }
+    
+    
+    // generate separate pngs for each glyph
+    for (const auto& charcodeAndGlyph : m_glyphs) {
+        const uint32_t charcode = charcodeAndGlyph.first;
+        const glyph& glyph = charcodeAndGlyph.second;
+        
+        std::ostringstream stringStream;
+        stringStream << "0x" << std::hex << charcode << std::dec << ".png";
+        
+        const std::string fileName = stringStream.str();
+        stbi_write_png(fileName.c_str(),
+                       glyph.bmp.width,
+                       glyph.bmp.height,
+                       1,
+                       glyph.bmp.data.data(),
+                       glyph.bmp.width);
+    }
+    
     std::cout << "Successful. Exiting." << std::endl;
     return 0;
 }
