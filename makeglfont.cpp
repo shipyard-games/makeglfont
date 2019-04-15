@@ -35,6 +35,7 @@
  * ========================================================================= */
 
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -547,26 +548,16 @@ int main( int argc, char **argv )
     std::vector<uint32_t> v_charcodes;
     
     std::string font_filename;
-    uint32_t charcode_start;
-    uint32_t charcode_end;
+    std::string charcodes_filename;
 
     // *** Process Args
     
-    if(argc!=4) {
-        std::cerr << "Arguments required: '" << argv[0] << " fontname.ttf charcode_start charcode_end'" << std::endl;
+    if(argc!=3) {
+        std::cerr << "Arguments required: '" << argv[0] << " fontname.ttf charcodes.csv" << std::endl;
         exit(0);
     } else {
         font_filename = argv[1];
-        
-        std::stringstream ss;
-        
-        ss << std::hex << argv[2];
-        ss >> charcode_start;
-        
-        ss.clear();
-        
-        ss << std::hex << argv[3];
-        ss >> charcode_end;
+        charcodes_filename = argv[2];
     }
 
     // *** Load Font
@@ -580,11 +571,27 @@ int main( int argc, char **argv )
     // *** Find valid character codes
     
     {
-        
+        std::ifstream f;
+        f.open(charcodes_filename);
+
         std::vector<uint32_t> global_charcodes;
-        
-        for(uint32_t i=charcode_start; i<=charcode_end; i+=1) {
-            global_charcodes.push_back(i);
+
+        std::string line;
+        while(std::getline(f, line)) {
+            std::stringstream ss(line);
+            std::string hex_string;
+            std::vector<uint32_t> charcodes;
+            while(std::getline(ss, hex_string, ',')) {
+                charcodes.push_back(std::stoi(hex_string, 0, 16));
+            }
+            if (charcodes.size() == 1) {
+                global_charcodes.push_back(charcodes[0]);
+            }
+            else if (charcodes.size() == 2) {
+                for (int i=charcodes[0]; i < charcodes[1]; i++) {
+                    global_charcodes.push_back(i);
+                }
+            }
         }
         
         for(int i = 0; i<global_charcodes.size(); i+=1) {
@@ -604,11 +611,11 @@ int main( int argc, char **argv )
     
     // *** Pack Glyphs
 
-    int font_size = 72;
+    int font_size = 64;
     
     std::map<uint32_t, glyph> m_glyphs;
     
-    int scale = 16;
+    int scale = 32;
     
     m_glyphs = load_glyphs(ftw, font_size, scale, v_charcodes);
     
@@ -780,7 +787,7 @@ int main( int argc, char **argv )
         const glyph& glyph = charcodeAndGlyph.second;
         
         std::ostringstream stringStream;
-        stringStream << "0x" << std::hex << charcode << std::dec << ".png";
+        stringStream << "0x" << std::setfill('0') << std::setw(4) << std::hex << charcode << std::dec << ".png";
         
         const std::string fileName = stringStream.str();
         stbi_write_png(fileName.c_str(),
